@@ -1,5 +1,8 @@
 package com.bodeganube.inventario.service;
 
+import com.bodeganube.inventario.dto.ActualizarProductoRequest;
+import com.bodeganube.inventario.dto.ProductoRequest;
+import com.bodeganube.inventario.dto.ProductoResponse;
 import com.bodeganube.inventario.dto.ReservaResponse;
 import com.bodeganube.inventario.exception.RecursoNoEncontradoException;
 import com.bodeganube.inventario.exception.ReglaNegocioException;
@@ -23,8 +26,46 @@ public class ProductoService {
         this.productoRepository = productoRepository;
     }
 
-    public List<Producto> listar() {
-        return productoRepository.findAll();
+    public List<ProductoResponse> listar() {
+        return productoRepository.findAll().stream()
+                .map(ProductoResponse::de)
+                .toList();
+    }
+
+    public ProductoResponse obtener(String sku) {
+        return ProductoResponse.de(buscarPorSku(sku));
+    }
+
+    @Transactional
+    public ProductoResponse crear(ProductoRequest request) {
+        if (productoRepository.existsBySku(request.sku())) {
+            throw new ReglaNegocioException("Ya existe un producto con SKU " + request.sku());
+        }
+        Producto producto = new Producto();
+        producto.setSku(request.sku());
+        producto.setNombre(request.nombre());
+        producto.setStockDisponible(request.stockDisponible());
+        producto.setStockReservado(0);
+        return ProductoResponse.de(productoRepository.save(producto));
+    }
+
+    @Transactional
+    public ProductoResponse actualizar(String sku, ActualizarProductoRequest request) {
+        Producto producto = buscarPorSku(sku);
+        producto.setNombre(request.nombre());
+        producto.setStockDisponible(request.stockDisponible());
+        return ProductoResponse.de(productoRepository.save(producto));
+    }
+
+    /** No se elimina un producto que tiene unidades reservadas por ordenes en curso. */
+    @Transactional
+    public void eliminar(String sku) {
+        Producto producto = buscarPorSku(sku);
+        if (producto.getStockReservado() > 0) {
+            throw new ReglaNegocioException("No se puede eliminar " + sku + ": tiene "
+                    + producto.getStockReservado() + " unidades reservadas por ordenes en curso");
+        }
+        productoRepository.delete(producto);
     }
 
     /**
